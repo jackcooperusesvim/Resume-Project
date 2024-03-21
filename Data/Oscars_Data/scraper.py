@@ -3,13 +3,23 @@ from icecream import ic
 import pickle as pkl
 from selenium.webdriver.common.by import By
 import datetime
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 THIS_YEAR = datetime.date.year
 FIRST_OSCARS_YEAR = 1920
 # I generally use selenium because of the js compatibility and the ability to navigate a page.
 # It might be kind of overkill for this one, but I would prefer to not have to rewrite this with
-# requests
+# requests.
+
+# TODO: At this point the parser is pretty much complete. The only problem is that the 
+# order of Names and Works seems to change according to the category. In Actor and Actress name 
+# comes first but not so in other categories
+
+# NOTE:
+#This comment is after I made the first commit. I spent like a good 3 hours getting mad at bs4, 
+#but it turns out that something with the way selenium reads the html results in this weird parsing from 
+# BeautifulSoup where completely empty NavigableStrings are parsed according to regular patterns between tags. 
+#I should have just used requests, but now that I know how it works I can finish the rest with selenium
 class award_category:
     def __init__(self,  winner, *nominations,year = 0):
         self.year = year
@@ -22,10 +32,26 @@ class award_category:
 
 class award:
     def __init__(self,views_row_div):
-        self.raw = views_row_div
+        ic("award created")
+        try:
+            self.work = views_row_div.find_all("span",{"class":"field-content"})[0].string
+        except:
+            self.work = None
+        try:
+            self.name =views_row_div.find("h4").string
+        except:
+            self.name = None
+        ic("    "+str(self.name))
+        ic("    "+str(self.work))
 
 
-# Here I use the fact that Dictionaries are pass-by-reference in python to create the2
+def remove_navstrings(elements):
+    out = []
+    for tag in elements:
+        if type(tag) == Tag:
+            out.append(tag)
+    return out
+# Here I use the fact that Dictionaries are pass-by-reference in python to create the
 # python approximation similar to Go Channels
 
 def read_oscars_page(output_dict,year):
@@ -40,9 +66,12 @@ def read_oscars_page(output_dict,year):
     source = root_el.get_attribute("outerHTML")
     soup = BeautifulSoup(source.encode("utf-8"),"lxml")
 
-    ic("finding the 'quicktabs-tabpage-honorees-0' div \non Enter...")
+    ic("finding the 'quicktabs-tabpage-honorees-0' div...")
 
     info = soup.find("div", id = "quicktabs-tabpage-honorees-0")
+    ic("step1")
+    ic(type(info))
+    ic(len(info))
 
     if info == None: 
         raise Exception("could not find a div with id=\"quicktabs-tabpage-honorees-0\"")
@@ -52,39 +81,61 @@ def read_oscars_page(output_dict,year):
 
     ic("searching the tree for the view-content div ...")
 
-    info = info.extract()
-    ic("step1")
-    ic(type(info))
-    ic(len(info))
-    info = info.contents[0]
-    ic("step2")
-    ic(type(info))
-    ic(len(info))
     info = info.contents
-    ic(type(info[0].extract()))
-    #THE PROBLEMS ARE IN THE ABOVE SECTION
+    test_case = info[0]
+    ic("step2")
+    ic(type(test_case))
+    ic(len(info))
+    ic("Searching...")
+    info = info[0].contents
+    ic("step3")
+    for div in info:
+        ic(type(div))
+    ic(type(info))
+    ic(len(info))
+    # Magic number. I know. I don't care. I am leaving this section unexplained. Deal with it.
+    ic("removing NavigableStrings")
+    info = remove_navstrings(info)
+    ic("Searching...")
+    info = info[2].contents
+    ic("step4")
+    for div in info:
+        ic(type(div))
+    ic(type(info))
+    ic(len(info))
+
+    # This line is necessary to prevent NavigableStrings from messing stuff up
+    ic("removing NavigableStrings")
+    info = remove_navstrings(info)
+    ic(len(info))
 
     categories = {}
     ic("iterating over 'view-grouping's ...")
+    iter = 0
     for vg_element in info:
-        header = vg_element.findChildren(_class = "view-grouping-header")[0]
-        content = vg_element.findChildren(_class = "view-grouping-content")
+        ic(iter)
+        iter+=1
+        vg_element = vg_element("div",recursive = False)
+        header = vg_element[0]
+        content = vg_element[1]
+
         category = header.h2.string
+        ic(category)
 
         working_on_winners = True
         winners = []
         nominees = []
-        index = 0
-        for elem in content.contents:
-            if index != 0:
-                if elem.name == "h3":
-                    working_on_winners = False
-            if working_on_winners:
-                winners.append(award(elem))
+        for elem in remove_navstrings(content.contents)[1:]:
+            if elem.name == "h3":
+                working_on_winners = False
+                ic("moving on to nominations")
+                continue
             else:
-                nominees.append(award(elem))
+                if working_on_winners:
+                    winners.append(award(elem))
+                else:
+                    nominees.append(award(elem))
 
-            index+=1
 
         categories[category] = {"winners": winners,"nominees": nominees,}
     output_dict[str(year)] = categories
@@ -93,8 +144,8 @@ def read_oscars_page(output_dict,year):
 if __name__ == "__main__":
     output_dict = dict()
     read_oscars_page(output_dict, 2016)
-    with open('dta2016.pkl','wb') as file:
-        pkl.dump(output_dict, file)
+    # with open('dta2016.pkl','wb') as file:
+    #     pkl.dump(output_dict, file)
 
 
 #
