@@ -20,29 +20,27 @@ FIRST_OSCARS_YEAR = 1920
 #but it turns out that something with the way selenium reads the html results in this weird parsing from 
 # BeautifulSoup where completely empty NavigableStrings are parsed according to regular patterns between tags. 
 #I should have just used requests, but now that I know how it works I can finish the rest with selenium
-class award_category:
-    def __init__(self,  winner, *nominations,year = 0):
-        self.year = year
-        self.nominations = list(nominations)
-        self.winner = winner
-
-    def nominated(self, nomination):
-        self.nominations.append(nomination)
 
 
 class award:
-    def __init__(self,views_row_div):
+    def __init__(self,views_row_div,ncf):
         ic("award created")
-        try:
+        if ncf:
             self.work = views_row_div.find_all("span",{"class":"field-content"})[0].string
-        except:
-            self.work = None
-        try:
             self.name =views_row_div.find("h4").string
-        except:
-            self.name = None
+        else:
+            self.name= views_row_div.find_all("span",{"class":"field-content"})[0].string
+            self.work=views_row_div.find("h4").string
         ic("    "+str(self.name))
         ic("    "+str(self.work))
+
+#NOTE: This function should fix at least 90% of the problem with names entering in the wrong order
+def names_come_first(category: str):
+    if category.find("Actor") != -1:
+        return True
+    if category.find("Actress") != -1:
+        return True
+    return False
 
 
 def remove_navstrings(elements):
@@ -120,6 +118,8 @@ def read_oscars_page(output_dict,year):
         content = vg_element[1]
 
         category = header.h2.string
+        #ncf stands for names_come_first. see the function of the same name to see why it is necessary
+        ncf = names_come_first(category)
         ic(category)
 
         working_on_winners = True
@@ -132,9 +132,9 @@ def read_oscars_page(output_dict,year):
                 continue
             else:
                 if working_on_winners:
-                    winners.append(award(elem))
+                    winners.append(award(elem,ncf))
                 else:
-                    nominees.append(award(elem))
+                    nominees.append(award(elem,ncf))
 
 
         categories[category] = {"winners": winners,"nominees": nominees,}
