@@ -1,9 +1,11 @@
 import selenium 
+import queue
+import threading
 from icecream import ic
-import pickle as pkl
 from selenium.webdriver.common.by import By
 import datetime
 from bs4 import BeautifulSoup, NavigableString, Tag
+import requests
 
 THIS_YEAR = datetime.date.year
 FIRST_OSCARS_YEAR = 1920
@@ -22,17 +24,30 @@ FIRST_OSCARS_YEAR = 1920
 #I should have just used requests, but now that I know how it works I can finish the rest with selenium
 
 
+id = 0
+
 class award:
     def __init__(self,views_row_div,ncf):
-        ic("award created")
+        # ic("award created")
         if ncf:
             self.work = views_row_div.find_all("span",{"class":"field-content"})[0].string
             self.name =views_row_div.find("h4").string
         else:
-            self.name= views_row_div.find_all("span",{"class":"field-content"})[0].string
-            self.work=views_row_div.find("h4").string
-        ic("    "+str(self.name))
-        ic("    "+str(self.work))
+            self.name= views_row_div.find_all("span",{"class":"field-content"})[0].string.strip()
+            self.work= views_row_div.find("h4").string.strip()
+        self.year = 0
+        self.id= -1
+        self.winner = False
+        self.category = ""
+        # ic(str(self.name))
+        # ic(str(self.work))
+    def __str__(self):
+        if self.winner:
+            typestring = "won"
+        else:
+            typestring = "nominated"
+
+        return "{},{},{},{},{},{}\n".format(self.category,self.work,self.name,str(self.year),typestring)
 
 #NOTE: This function should fix at least 90% of the problem with names entering in the wrong order
 def names_come_first(category: str):
@@ -52,7 +67,7 @@ def remove_navstrings(elements):
 # Here I use the fact that Dictionaries are pass-by-reference in python to create the
 # python approximation similar to Go Channels
 
-def read_oscars_page(output_dict,year):
+def read_oscars_page(queue,year):
     ic("creating webdriver...")
     driver = selenium.webdriver.Chrome()
     ic("opening website...")
@@ -69,7 +84,7 @@ def read_oscars_page(output_dict,year):
     info = soup.find("div", id = "quicktabs-tabpage-honorees-0")
     ic("step1")
     ic(type(info))
-    ic(len(info))
+    ic(info)
 
     if info == None: 
         raise Exception("could not find a div with id=\"quicktabs-tabpage-honorees-0\"")
@@ -120,30 +135,54 @@ def read_oscars_page(output_dict,year):
         category = header.h2.string
         #ncf stands for names_come_first. see the function of the same name to see why it is necessary
         ncf = names_come_first(category)
-        ic(category)
+        # ic(category)
 
         working_on_winners = True
-        winners = []
-        nominees = []
         for elem in remove_navstrings(content.contents)[1:]:
             if elem.name == "h3":
                 working_on_winners = False
-                ic("moving on to nominations")
+                # ic("moving on to nominations")
                 continue
             else:
+                awd = award(elem,ncf)
+                awd.year = year 
+                awd.category = category
+                global id
+                awd.id= id
                 if working_on_winners:
-                    winners.append(award(elem,ncf))
-                else:
-                    nominees.append(award(elem,ncf))
-
-
-        categories[category] = {"winners": winners,"nominees": nominees,}
-    output_dict[str(year)] = categories
-
+                    awd.winner = True
+                queue.put(awd)
+                id+=1
 
 if __name__ == "__main__":
-    output_dict = dict()
-    read_oscars_page(output_dict, 2016)
+    start = 2020
+    end = 2024
+    q = queue.Queue()
+    concurrent_threads = 15
+    current_threadid = 0
+    while current_threadid<end:
+
+        current_threads = []
+        i=0
+        while i<concurrent_threads:
+            t = threading.Thread(target=read_oscars_page, args = (q,start+current_threadid))
+            t.start()
+            current_threads.append(t)
+            i+=1
+            current_threadid+=1
+
+        for thread in current_threads:
+            thread.join()
+
+    outstr = ""
+    while not q.empty():
+        award = q.get()
+        outstr = outstr+str(award)
+        ic(str(award))
+
+    with open('oscars.csv','w') as file:
+        file.write(outstr)
+
     # with open('dta2016.pkl','wb') as file:
     #     pkl.dump(output_dict, file)
 
