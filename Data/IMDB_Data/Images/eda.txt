@@ -1,0 +1,4 @@
+This is a summary of the findings of the EDA Performed on the IMDB Dataset
+
+
+It appears as if there is a bit of an issue with reading some data on tableau: one field is marked as IsAdult. It is supposed to a binary int (bool), but it appears that some other numbers have got in there. They also appear to be specifically years. I think this is a parsing issue. I attached an image of the issue here in the Images directory.
